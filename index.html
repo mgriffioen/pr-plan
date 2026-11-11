@@ -213,12 +213,8 @@ function mapQuery(it){
   const name = it.title.replace(/\s*\(.*\)$/,"").split(" · ").pop();
   return it.address ? `${name}, ${it.address}` : (it.place||it.title);
 }
-// MapQuest wants the query in the path, and finds Puerto Rico places reliably only when "Puerto Rico" is spelled out.
-function mapFor(it){
-  let q = mapQuery(it).replace(/,?\s*PR\s*\d{5}\b/i, "");
-  if (!/puerto rico/i.test(q)) q += ", Puerto Rico";
-  return "https://www.mapquest.com/search/" + encodeURIComponent(q);
-}
+// maps.apple.com links open the Apple Maps app on iPhone.
+function mapFor(it){ return "https://maps.apple.com/?q=" + encodeURIComponent(mapQuery(it)); }
 function googleFor(it){ return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(mapQuery(it)); }
 function safeUrl(u){ return /^https?:\/\//i.test(u||"") ? u : ""; }
 function toast(msg){ const t=document.createElement("div"); t.className="toast"; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2400); }
@@ -439,7 +435,7 @@ function openDetail(it){
     <div class="where">${esc([it.area, it.dist].filter(Boolean).join(" · "))}</div>
     <dl class="detail">
       ${row("When", esc(when))}
-      ${row("Address", (it.address||it.place) ? `${esc(it.address||it.place)}<br><a href="${mapFor(it)}" target="_blank" rel="noopener">Open in MapQuest</a> · <a href="${googleFor(it)}" target="_blank" rel="noopener">Google Maps</a>` : "")}
+      ${row("Address", (it.address||it.place) ? `${esc(it.address||it.place)}<br><a href="${mapFor(it)}" target="_blank" rel="noopener">Open in Apple Maps</a> · <a href="${googleFor(it)}" target="_blank" rel="noopener">Google Maps</a>` : "")}
       ${row("Phone", it.phone ? `${copyable(it.phone)}<br><a href="tel:${esc(it.phone.replace(/[^\d+]/g,""))}">Call</a>` : "")}
       ${row("Website", site ? `<a href="${esc(site)}" target="_blank" rel="noopener">${esc(site.replace(/^https?:\/\/(www\.)?/,"").replace(/\/$/,""))}</a>` : "")}
       ${row("Email", it.email ? copyable(it.email) : "")}
