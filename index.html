@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#12384F">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Puerto Rico">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" type="image/png" href="icon-180.png">
@@ -27,12 +27,8 @@
   --f-display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif;
   --f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
-  /* Root says "dark" so iOS draws a dark status-bar fade over the navy header;
-     the body sets the real scheme for the page's own controls. */
-  color-scheme:dark;
+  color-scheme:light;
 }
-body{color-scheme:light}
-@media (prefers-color-scheme: dark){body{color-scheme:dark}}
 @media (prefers-color-scheme: dark){:root{
   --bg:#0B161D; --surface:#13222C; --ink:#E6EEF2; --muted:#93A7B4; --line:#22394A;
   --head:#0A2231; --head-ink:#EEF5F8; --head-muted:#86A6B8;
@@ -42,8 +38,7 @@ body{color-scheme:light}
   --shadow:0 1px 2px rgba(0,0,0,.3);
   color-scheme:dark}}
 *{box-sizing:border-box}
-/* Navy root so iOS's status-bar fade blends into the header; the light page color sits on body. */
-html{-webkit-text-size-adjust:100%;background:var(--head)}
+html{-webkit-text-size-adjust:100%;background:var(--bg)}
 body{margin:0;min-height:100vh;min-height:100dvh;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
 [hidden]{display:none!important}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -214,8 +209,16 @@ function fmtTime(t){ if(!t) return ""; let [h,m] = t.split(":").map(Number); con
 function addHour(t){ const [h,m]=t.split(":").map(Number); return String(h+1).padStart(2,"0")+":"+String(m).padStart(2,"0"); }
 function prTime(it){ return it.time ? (it.tz==="ET" ? addHour(it.time) : it.time) : ""; }
 function sortKey(it){ return (it.day||"9") + (prTime(it) || "99:99"); }
-function mapQuery(it){ return it.address ? `${it.title.replace(/\s*\(.*\)$/,"")}, ${it.address}` : (it.place||it.title); }
-function mapFor(it){ return "https://www.mapquest.com/search/results?query=" + encodeURIComponent(mapQuery(it)); }
+function mapQuery(it){
+  const name = it.title.replace(/\s*\(.*\)$/,"").split(" · ").pop();
+  return it.address ? `${name}, ${it.address}` : (it.place||it.title);
+}
+// MapQuest wants the query in the path, and finds Puerto Rico places reliably only when "Puerto Rico" is spelled out.
+function mapFor(it){
+  let q = mapQuery(it).replace(/,?\s*PR\s*\d{5}\b/i, "");
+  if (!/puerto rico/i.test(q)) q += ", Puerto Rico";
+  return "https://www.mapquest.com/search/" + encodeURIComponent(q);
+}
 function googleFor(it){ return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(mapQuery(it)); }
 function safeUrl(u){ return /^https?:\/\//i.test(u||"") ? u : ""; }
 function toast(msg){ const t=document.createElement("div"); t.className="toast"; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2400); }
