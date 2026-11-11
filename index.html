@@ -148,6 +148,18 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 .rating{font-family:var(--f-display);font-weight:700;font-size:17px}
 .checked{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
 
+.wx{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px}
+.wx .temp{font-family:var(--f-display);font-weight:700;font-size:18px;font-variant-numeric:tabular-nums}
+.wx .lo{color:var(--muted);font-weight:500}
+.wx .rain{color:var(--sea);font-weight:600}
+.wx .sun{margin-left:auto;display:inline-flex;gap:6px;align-items:center;color:var(--muted)}
+.wx .sun b{color:var(--ink);font-weight:600}
+.wx svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+.wx .typ{color:var(--muted);font-size:13px;flex-basis:100%}
+.choice{display:grid;gap:8px}
+.choice label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:12px;padding:12px}
+.choice input{margin-top:3px;accent-color:var(--sea)}
+.choice small{display:block;color:var(--muted)}
 .login{display:grid;gap:14px;max-width:420px;margin:12px auto 0}
 .login p{margin:0;color:var(--muted)}
 .err{color:var(--accent);font-size:14px;min-height:1.2em}
@@ -221,6 +233,104 @@ function toast(msg){ const t=document.createElement("div"); t.className="toast";
 function setSync(kind, text){ $("#sync").className="sync "+(kind||""); $("#syncText").textContent=text; }
 const sheetOpen = () => !!$("#sheetHost").innerHTML;
 const closeSheet = () => { $("#sheetHost").innerHTML = ""; };
+
+/* ---------- weather + sunset ---------- */
+const SJU = { lat:18.4655, lon:-66.1057 };
+const WX_URL = `https://api.open-meteo.com/v1/forecast?latitude=${SJU.lat}&longitude=${SJU.lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&temperature_unit=fahrenheit&timezone=America%2FPuerto_Rico&forecast_days=16`;
+let wx = recall("pr-wx") || { fetched:0, days:{} };
+function wxLabel(c){
+  if (c === 0) return "Sunny"; if (c === 1) return "Mostly sunny"; if (c === 2) return "Partly cloudy"; if (c === 3) return "Cloudy";
+  if (c === 45 || c === 48) return "Hazy"; if (c >= 51 && c <= 57) return "Light showers"; if (c >= 61 && c <= 67) return "Rain";
+  if (c >= 80 && c <= 82) return "Showers"; if (c >= 95) return "Thunderstorms"; return "Mixed";
+}
+async function loadWeather(){
+  if (Date.now() - wx.fetched < 3*3600e3 || !navigator.onLine) return;
+  try {
+    const r = await fetch(WX_URL); if (!r.ok) return;
+    const d = (await r.json()).daily, days = {};
+    d.time.forEach((t,i) => { if (DAYS.includes(t)) days[t] = { code:d.weather_code[i], hi:Math.round(d.temperature_2m_max[i]), lo:Math.round(d.temperature_2m_min[i]), pop:d.precipitation_probability_max[i] }; });
+    wx = { fetched:Date.now(), days }; store("pr-wx", wx);
+    if (user && state.tab==="days" && !sheetOpen()) render();
+  } catch(e){}
+}
+// Sunrise equation (NOAA-style); returns San Juan time (UTC-4, no daylight saving) as "HH:MM".
+function sunset(iso){
+  const rad = Math.PI/180, J = Date.parse(iso+"T16:00:00Z")/864e5 + 2440587.5;
+  const n = Math.round(J - 2451545 + 0.0008), Js = n - SJU.lon/360;
+  const M = (357.5291 + 0.98560028*Js) % 360;
+  const C = 1.9148*Math.sin(M*rad) + 0.02*Math.sin(2*M*rad) + 0.0003*Math.sin(3*M*rad);
+  const L = (M + C + 282.9372) % 360;
+  const Jt = 2451545 + Js + 0.0053*Math.sin(M*rad) - 0.0069*Math.sin(2*L*rad);
+  const dec = Math.asin(Math.sin(L*rad)*Math.sin(23.44*rad));
+  const w = Math.acos((Math.sin(-0.833*rad) - Math.sin(SJU.lat*rad)*Math.sin(dec)) / (Math.cos(SJU.lat*rad)*Math.cos(dec)));
+  const ms = (Jt + w/(2*Math.PI) - 2440587.5)*864e5 - 4*3600e3;
+  return new Date(ms).toISOString().slice(11,16);
+}
+function wxStrip(day){
+  const f = wx.days[day];
+  const sun = `<span class="sun"><svg viewBox="0 0 24 24"><path d="M4 18h16M7 18a5 5 0 0 1 10 0M12 6v3M5.6 10.6l1.8 1.4M18.4 10.6l-1.8 1.4"/></svg>Sunset <b>${fmtTime(sunset(day))}</b></span>`;
+  if (f) return `<div class="wx"><span class="temp">${f.hi}°<span class="lo"> / ${f.lo}°</span></span><span>${esc(wxLabel(f.code))}</span>${f.pop!=null?`<span class="rain">${f.pop}% rain</span>`:""}${sun}</div>`;
+  return `<div class="wx"><span class="temp">84°<span class="lo"> / 73°</span></span><span>Typical</span>${sun}<span class="typ">Typical early-December weather: warm, with quick passing showers. The real forecast appears about two weeks before each day.</span></div>`;
+}
+
+/* ---------- calendar export ---------- */
+const KNOWN_END = { "flight-out":"14:04", "flight-home":"19:55", "spoon-tour":"19:00", "yunque-tour":"21:30" };
+const DEFAULT_MIN = { flight:180, tour:180, do:120, eat:90, drink:90, hotel:30, other:30 };
+function utcStamp(ms){ return new Date(ms).toISOString().replace(/[-:]/g,"").replace(/\.\d+/,""); }
+function localMs(day, time, tz){ const [y,m,d] = day.split("-").map(Number), [h,mi] = time.split(":").map(Number); return Date.UTC(y, m-1, d, h + (tz==="ET"?5:4), mi); }
+function icsText(s){ return String(s||"").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\r?\n/g,"\\n"); }
+function fold(line){ const out = []; while (line.length > 74){ out.push(line.slice(0,74)); line = " " + line.slice(74); } out.push(line); return out.join("\r\n"); }
+function buildICS(list){
+  const L = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//pr-plan//Puerto Rico Trip//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH","X-WR-CALNAME:Puerto Rico Trip"];
+  const stamp = utcStamp(Date.now());
+  list.forEach(it => {
+    const label = it.status==="booked" ? "" : it.status==="maybe" ? " (maybe)" : " (possible)";
+    L.push("BEGIN:VEVENT", `UID:${it.id}@pr-plan`, `DTSTAMP:${stamp}`);
+    if (it.time){
+      const start = localMs(it.day, it.time, it.tz);
+      const endT = it.endTime || KNOWN_END[it.id];
+      let end = endT ? localMs(it.day, endT, "AST") : 0;
+      if (!end || end <= start) end = start + (DEFAULT_MIN[it.category]||60)*60e3;
+      L.push(`DTSTART:${utcStamp(start)}`, `DTEND:${utcStamp(end)}`);
+    } else {
+      const d = it.day.replace(/-/g,""), next = new Date(Date.parse(it.day+"T12:00:00Z")+864e5).toISOString().slice(0,10).replace(/-/g,"");
+      L.push(`DTSTART;VALUE=DATE:${d}`, `DTEND;VALUE=DATE:${next}`);
+    }
+    L.push(`SUMMARY:${icsText(it.title + label)}`);
+    const loc = it.address || it.place; if (loc) L.push(`LOCATION:${icsText(loc)}`);
+    const desc = [it.notes, it.conf && `Confirmation: ${it.conf}`, it.phone && `Phone: ${it.phone}`, safeUrl(it.url) || safeUrl(it.website)].filter(Boolean).join("\n");
+    if (desc) L.push(`DESCRIPTION:${icsText(desc)}`);
+    if (it.status==="booked" && it.time) L.push("BEGIN:VALARM","ACTION:DISPLAY",`DESCRIPTION:${icsText(it.title)}`,"TRIGGER:-PT1H","END:VALARM");
+    L.push("END:VEVENT");
+  });
+  L.push("END:VCALENDAR");
+  return L.map(fold).join("\r\n") + "\r\n";
+}
+function openCalSheet(){
+  const scheduled = items.filter(i => i.day).sort((a,b)=>sortKey(a).localeCompare(sortKey(b)));
+  const booked = scheduled.filter(i => i.status==="booked");
+  $("#sheetHost").innerHTML = `
+  <div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-label="Add to Calendar">
+    <h2>Add to Calendar</h2>
+    <p class="note">Downloads a calendar file of the schedule. Booked items get a reminder one hour before.</p>
+    <div class="choice">
+      <label><input type="radio" name="calset" id="cal-booked" value="booked" checked><span><strong>Booked only (${booked.length})</strong><small>Flights, hotel and tours.</small></span></label>
+      <label><input type="radio" name="calset" id="cal-all" value="all"><span><strong>Everything on the schedule (${scheduled.length})</strong><small>Possible and maybe items are labeled in the title.</small></span></label>
+    </div>
+    <p class="note">On iPhone, open the downloaded file and tap <strong>Add All</strong>. Adding it again later makes duplicates, so delete the old events first.</p>
+    <div class="sheet-actions"><button type="button" class="btn ghost" id="calCancel">Cancel</button><button type="button" class="btn" id="calGo">Download calendar file</button></div>
+  </div></div>`;
+  $("#calCancel").onclick = closeSheet;
+  $("#scrim").addEventListener("click", e => { if (e.target.id==="scrim") closeSheet(); });
+  $("#calGo").onclick = () => {
+    const list = $("#cal-all").checked ? scheduled : booked;
+    const blob = new Blob([buildICS(list)], { type:"text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = url; a.download = "puerto-rico-trip.ics"; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    closeSheet(); toast(`Calendar file with ${list.length} events ready`);
+  };
+}
 
 /* ---------- writes (Firestore queues them while offline) ---------- */
 const col = name => collection(fsdb, name);
@@ -361,8 +471,9 @@ function renderDays(v){
   v.innerHTML = `
     <div class="days" role="group" aria-label="Trip days">${strip}</div>
     <div class="day-head"><h2>${p.wdl}, ${p.md}</h2><span class="meta">Day ${DAYS.indexOf(state.day)+1} · times are San Juan time</span></div>
+    ${wxStrip(state.day)}
     <div class="timeline">${rows || `<div class="empty">Nothing planned yet. Pick something from Ideas or add your own.</div>`}</div>
-    <div class="add-row"><button class="btn small" data-new="${state.day}">Add to ${p.wd}</button><button class="btn ghost small" data-goto="ideas">Browse ideas</button></div>`;
+    <div class="add-row"><button class="btn small" data-new="${state.day}">Add to ${p.wd}</button><button class="btn ghost small" data-goto="ideas">Browse ideas</button><button class="btn ghost small" data-cal="1">Add to Calendar</button></div>`;
 }
 
 function renderIdeas(v){
@@ -386,6 +497,7 @@ function renderBookings(v){
   v.innerHTML = `
     <h2>Bookings</h2>
     <p class="note">Confirmation numbers and details in one place. Tap Copy to grab a code for a check-in desk or app.</p>
+    <div class="add-row"><button class="btn ghost small" data-cal="1">Add to Calendar</button></div>
     <div class="list">${list.map(i=>{
       const when = i.day ? `${dayParts(i.day).wd} ${dayParts(i.day).md}${i.time?" · "+fmtTime(i.time)+(i.tz==="ET"?" Detroit time":""):""}` : "";
       return `<div><div class="section-label" style="margin:0 0 6px">${esc(when)}</div>${itemCard(i)}</div>`;
@@ -463,9 +575,10 @@ function openSheet(it, focusDay){
   <div class="scrim" id="scrim"><form class="sheet" id="sheet" role="dialog" aria-label="${isNew?"Add":"Edit"} plan">
     <h2>${isNew?"Add to the trip":esc(it.title)}</h2>
     <label class="field"><span>Title</span><input type="text" id="f-title" value="${esc(it.title)}" required></label>
+    <label class="field"><span>Day</span><select id="f-day">${dayOpts}</select></label>
     <div class="two">
-      <label class="field"><span>Day</span><select id="f-day">${dayOpts}</select></label>
       <label class="field"><span>Time</span><input type="time" id="f-time" value="${esc(it.time)}"></label>
+      <label class="field"><span>Ends</span><input type="time" id="f-end" value="${esc(it.endTime || KNOWN_END[it.id] || "")}"></label>
     </div>
     <div class="two">
       <label class="field"><span>Type</span><select id="f-cat">${catOpts}</select></label>
@@ -503,7 +616,7 @@ function openSheet(it, focusDay){
     const { id, ...rest } = it;
     const val = s => $(s).value.trim();
     const data = { ...rest,
-      title:val("#f-title"), day:$("#f-day").value, time:$("#f-time").value,
+      title:val("#f-title"), day:$("#f-day").value, time:$("#f-time").value, endTime:$("#f-end").value,
       category:$("#f-cat").value, status:$("#f-status").value, place:val("#f-place"),
       notes:val("#f-notes"), conf:val("#f-conf"), address:val("#f-address"), phone:val("#f-phone"),
       rating:val("#f-rating"), website:val("#f-website"), email:val("#f-email"),
@@ -533,6 +646,7 @@ document.addEventListener("click", async e => {
   else if (d.day){ state.day = d.day; render(); }
   else if (d.goto){ state.tab = d.goto; render(); scrollTo(0,0); }
   else if (d.filter){ state.filter = d.filter; render(); }
+  else if (d.cal){ openCalSheet(); }
   else if (d.edit){ const it = items.find(i=>i.id===d.edit); if (it) openSheet(it); }
   else if (d.plan){ const it = items.find(i=>i.id===d.plan); if (it) openSheet({...it, status: it.status||"plan"}, true); }
   else if (d.new!==undefined){ openSheet({title:"", day:d.new, time:"", category: state.tab==="ideas"?"do":"other", status:"plan", place:"", notes:"", conf:""}); }
@@ -575,7 +689,7 @@ addEventListener("offline", () => setSync("warn", "Offline · saved copy"));
 /* ---------- boot ---------- */
 state.tab = recall("pr-tab") || "days";
 renderStatus();
-setInterval(()=>{ renderStatus(); if (user && state.tab==="days" && !sheetOpen()) render(); }, 60000);
+setInterval(()=>{ renderStatus(); loadWeather(); if (user && state.tab==="days" && !sheetOpen()) render(); }, 60000);
 
 if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("PASTE")) {
   renderSetupNeeded();
@@ -586,7 +700,7 @@ if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("PASTE")) {
   auth = getAuth(app);
   onAuthStateChanged(auth, u => {
     user = u;
-    if (u){ setSync("warn", "Connecting"); subscribe(); render(); }
+    if (u){ setSync("warn", "Connecting"); subscribe(); render(); loadWeather(); }
     else { unsubscribe(); closeSheet(); renderLogin(); }
   });
 }
