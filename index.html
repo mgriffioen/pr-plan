@@ -27,8 +27,12 @@
   --f-display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif;
   --f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
-  color-scheme:light;
+  /* Root says "dark" so iOS draws a dark status-bar fade over the navy header;
+     the body sets the real scheme for the page's own controls. */
+  color-scheme:dark;
 }
+body{color-scheme:light}
+@media (prefers-color-scheme: dark){body{color-scheme:dark}}
 @media (prefers-color-scheme: dark){:root{
   --bg:#0B161D; --surface:#13222C; --ink:#E6EEF2; --muted:#93A7B4; --line:#22394A;
   --head:#0A2231; --head-ink:#EEF5F8; --head-muted:#86A6B8;
@@ -210,8 +214,9 @@ function fmtTime(t){ if(!t) return ""; let [h,m] = t.split(":").map(Number); con
 function addHour(t){ const [h,m]=t.split(":").map(Number); return String(h+1).padStart(2,"0")+":"+String(m).padStart(2,"0"); }
 function prTime(it){ return it.time ? (it.tz==="ET" ? addHour(it.time) : it.time) : ""; }
 function sortKey(it){ return (it.day||"9") + (prTime(it) || "99:99"); }
-function mapUrl(q){ return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q); }
-function mapFor(it){ return mapUrl(it.address ? `${it.title.replace(/\s*\(.*\)$/,"")}, ${it.address}` : (it.place||it.title)); }
+function mapQuery(it){ return it.address ? `${it.title.replace(/\s*\(.*\)$/,"")}, ${it.address}` : (it.place||it.title); }
+function mapFor(it){ return "https://www.mapquest.com/search/results?query=" + encodeURIComponent(mapQuery(it)); }
+function googleFor(it){ return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(mapQuery(it)); }
 function safeUrl(u){ return /^https?:\/\//i.test(u||"") ? u : ""; }
 function toast(msg){ const t=document.createElement("div"); t.className="toast"; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2400); }
 function setSync(kind, text){ $("#sync").className="sync "+(kind||""); $("#syncText").textContent=text; }
@@ -431,7 +436,7 @@ function openDetail(it){
     <div class="where">${esc([it.area, it.dist].filter(Boolean).join(" · "))}</div>
     <dl class="detail">
       ${row("When", esc(when))}
-      ${row("Address", (it.address||it.place) ? `${esc(it.address||it.place)}<br><a href="${mapFor(it)}" target="_blank" rel="noopener">Open in Google Maps</a>` : "")}
+      ${row("Address", (it.address||it.place) ? `${esc(it.address||it.place)}<br><a href="${mapFor(it)}" target="_blank" rel="noopener">Open in MapQuest</a> · <a href="${googleFor(it)}" target="_blank" rel="noopener">Google Maps</a>` : "")}
       ${row("Phone", it.phone ? `${copyable(it.phone)}<br><a href="tel:${esc(it.phone.replace(/[^\d+]/g,""))}">Call</a>` : "")}
       ${row("Website", site ? `<a href="${esc(site)}" target="_blank" rel="noopener">${esc(site.replace(/^https?:\/\/(www\.)?/,"").replace(/\/$/,""))}</a>` : "")}
       ${row("Email", it.email ? copyable(it.email) : "")}
