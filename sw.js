@@ -1,6 +1,6 @@
 // Keeps the app itself available offline. Trip data is cached separately by Firebase.
-const CACHE = "pr-trip-v1";
-const SHELL = ["./", "./index.html", "./firebase-config.js", "./manifest.webmanifest", "./icon-180.png", "./icon-512.png"];
+const CACHE = "pr-trip-v2";
+const SHELL = ["./", "./index.html", "./firebase-config.js", "./qrcode.min.js", "./manifest.webmanifest", "./icon-180.png", "./icon-512.png"];
 const CDN_HOSTS = ["www.gstatic.com", "fonts.googleapis.com", "fonts.gstatic.com"];
 
 self.addEventListener("install", e => {
