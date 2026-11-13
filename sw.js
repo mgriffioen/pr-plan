@@ -1,5 +1,5 @@
 // Keeps the app itself available offline. Trip data is cached separately by Firebase.
-const CACHE = "pr-trip-v2";
+const CACHE = "pr-trip-v3";
 const SHELL = ["./", "./index.html", "./firebase-config.js", "./qrcode.min.js", "./manifest.webmanifest", "./icon-180.png", "./icon-512.png"];
 const CDN_HOSTS = ["www.gstatic.com", "fonts.googleapis.com", "fonts.gstatic.com"];
 
@@ -17,7 +17,8 @@ self.addEventListener("fetch", e => {
   const url = new URL(req.url);
   if (url.origin === self.location.origin) {
     // Network first, so updates you push show up; cached copy when offline.
-    e.respondWith(fetch(req).then(res => {
+    // "no-cache" makes the browser check with the server instead of reusing GitHub Pages' 10-minute cached copy.
+    e.respondWith(fetch(req, { cache: "no-cache" }).then(res => {
       const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return res;
     }).catch(() => caches.match(req, { ignoreSearch: true }).then(r => r || caches.match("./index.html"))));
   } else if (CDN_HOSTS.includes(url.hostname)) {

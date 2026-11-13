@@ -888,7 +888,18 @@ if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("PASTE")) {
 }
 
 if ("serviceWorker" in navigator && location.protocol === "https:") {
-  navigator.serviceWorker.register("sw.js").catch(()=>{});
+  // Always fetch sw.js fresh, and reload once when a new version takes over, so pushed updates show up on the next open.
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => r.update()).catch(()=>{});
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || reloaded || sheetOpen()) return;
+    reloaded = true; location.reload();
+  });
+  // Home-screen apps can stay open for days; check for an update whenever the app comes back to the front.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(()=>{});
+  });
 }
 </script>
 </body>
